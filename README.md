@@ -148,3 +148,41 @@ The backend is decoupled using Flask Blueprints. Here is the strict mapping of e
 | `POST` | `/api/admin/employees` | `@admin` | Onboarding endpoint that hashes passwords securely and maps the new hire to the adjacency tree. |
 | `GET` | `/api/admin/export-csv` | `@admin` | Leverages `io.StringIO` to generate an in-memory virtual Excel/CSV byte stream to prevent RAM spiking. |
 | `GET` | `/api/admin/analytics-dashboard` | `@admin` | Computes macro intelligence variables (Manager effectiveness, Goal Thrust distributions, QoQ status trends). |
+
+
+## 🗄️ 8. Enterprise Database Schema & Architecture
+The platform utilizes a highly normalized, relational PostgreSQL architecture designed for hierarchical organization mapping, lock-based governance, and immutable audit logging. 
+
+### 8.1 Identity & Hierarchy Engine (`public.users`)
+This table manages all identities and dynamically maps the reporting structure using an **Adjacency List Model**.
+* 📐 **Self-Referencing Hierarchy:** The `manager_id` recursively links back to `users(id)`, allowing the system to build infinite-depth organizational trees without redundant mapping tables.
+* ⚡ **Performance Indexing:** A B-Tree Index (`idx_users_manager_id`) drops lookup latency from linear sequential scans to $O(\log N)$ binary searches, making team-fetching instant.
+
+### 8.2 The Core Transactional Matrix (`public.kpis`)
+The central engine storing goals, achievements, assessment remarks, and strict governance states.
+* 🧠 **Polymorphic Target Engine:** By defining `target` and `actual_performance` as `VARCHAR(50)`, the schema natively supports heterogenous Metrics (Numeric, Percentages, Timelines) without crashing due to strict SQL type-casting.
+* 🔒 **Dual-State Mutability Locks:** * `manager_locked = true`: Prevents employee edits on targets post Phase 1.
+  * `admin_locked = true`: Globally freezes the quarter post Phase 2.
+* 🧹 **Cascading Deletes:** `ON DELETE CASCADE` ensures that if an employee is removed, all associated KPIs are wiped out, preventing database bloat.
+
+### 8.3 Immutable Compliance Ledger (`public.audit_logs`)
+* ⚖️ **Transactionally Coupled Integrity:** Using Common Table Expressions (CTEs), every modification in the `kpis` table is inserted into `audit_logs` in the *exact same database transaction*.
+* ⏱️ **Timestamp Auditing:** The system securely logs actions (`GOAL_APPROVED`, `ADMIN_UNLOCK`, `SYSTEM_AUTO_APPROVE`) with server-side timestamps, ensuring HR accountability.
+
+---
+
+## 🎭 9. Test Credentials & Interactive Evaluation Scenarios
+To facilitate a comprehensive evaluation, we have seeded the database with realistic test data. Evaluators can use the following credentials to experience the interconnected lifecycle of the application:
+
+| Role | Email ID (Username) | Password |
+| :--- | :--- | :--- |
+| **HR / Admin** | `admin@atomberg.com` | `atomberg@hr` |
+| **L1 Manager** | `manager@atomberg.com` | `atomberg@manager` |
+| **Employee 1** | `rahul@atomberg.com` | `atomberg@employee` |
+| **Employee 2** | `priya@atomberg.com` | `atomberg@employee` |
+
+#### Recommended Evaluation Flow:
+1. **The Sandbox (Login as `rahul@atomberg.com`):** Navigate to the Goal Sheet. Observe the read-only broadcasted goal. Attempt to create goals and see how the system strictly blocks submission until exactly 100% weightage is met.
+2. **The Approval Workflow (Login as `manager@atomberg.com`):** Go to 'Goal Approvals'. Review Priya's submitted goals. Approving them triggers `manager_locked = true`, freezing the target parameters.
+3. **Phase 2 Tracking (Login as `priya@atomberg.com`):** Go to 'Achievement Tracking'. Notice targets are now immutable. Enter 'Actual Performance' to see the backend dynamically calculate completion percentages.
+4. **Executive Governance (Login as `admin@atomberg.com`):** Open the 'Control Center' to view the corporate node tree. Review the 'Audit Logs' ledger. Test the Exception Handling tool to selectively grant overrides to locked KPI sheets.
